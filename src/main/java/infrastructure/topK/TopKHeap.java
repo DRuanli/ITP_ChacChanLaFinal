@@ -1,7 +1,7 @@
 package infrastructure.topK;
 
 import domain.model.Itemset;
-import domain.model.Pattern;
+import domain.model.FrequentItemset;
 
 import java.util.*;
 
@@ -72,11 +72,11 @@ public class TopKHeap {
      * Min-heap ordered by support (ascending), then probability (ascending).
      * Root is always the pattern with minimum support.
      *
-     * Comparator: (a, b) -> compare(a.support, b.support)
-     *   - Returns negative if a.support < b.support (a comes first)
+     * Comparator: (a, b) -> compare(a.getSupport(), b.getSupport())
+     *   - Returns negative if a.getSupport() < b.getSupport() (a comes first)
      *   - This makes it a MIN-heap (smallest at root)
      */
-    private final PriorityQueue<Pattern> heap;
+    private final PriorityQueue<FrequentItemset> heap;
 
     /**
      * Set of itemsets already in heap (for deduplication).
@@ -96,12 +96,12 @@ public class TopKHeap {
         // Comparator returns negative when a < b, making a come first (root)
         this.heap = new PriorityQueue<>((a, b) -> {
             // Primary: compare by support (ascending for min-heap)
-            int cmp = Integer.compare(a.support, b.support);
+            int cmp = Integer.compare(a.getSupport(), b.getSupport());
 
             // Secondary: compare by probability (ascending)
             // If supports equal, lower probability = more likely to be replaced
             if (cmp == 0) {
-                cmp = Double.compare(a.probability, b.probability);
+                cmp = Double.compare(a.getProbability(), b.getProbability());
             }
 
             return cmp;
@@ -112,7 +112,7 @@ public class TopKHeap {
     }
 
     /**
-     * Insert a pattern into the heap.
+     * Insert a FrequentItemset into the heap.
      *
      * ═══════════════════════════════════════════════════════════════════════
      * ALGORITHM:
@@ -120,7 +120,7 @@ public class TopKHeap {
      *
      * 1. DEDUPLICATION CHECK:
      *    - If itemset already seen, reject (return false)
-     *    - Same itemset may be generated via different paths
+     *    - Same itemset may be generated via different extension paths
      *
      * 2. HEAP NOT FULL (size < k):
      *    - Add pattern directly
@@ -139,17 +139,15 @@ public class TopKHeap {
      *
      * Thread-safe: synchronized for concurrent access from mining.
      *
-     * @param itemset itemset to insert
-     * @param support support value
-     * @param probability probability value
+     * @param fi FrequentItemset to insert
      * @return true if inserted, false if duplicate or not competitive
      */
-    public synchronized boolean insert(Itemset itemset, int support, double probability) {
+    public synchronized boolean insert(FrequentItemset fi) {
         // ─────────────────────────────────────────────────────────────
         // STEP 1: Deduplication check
         // Mining may discover same itemset via different extension paths
         // ─────────────────────────────────────────────────────────────
-        if (seenItemsets.contains(itemset)) {
+        if (seenItemsets.contains(fi)) {
             return false;  // Already in heap
         }
 
@@ -157,11 +155,11 @@ public class TopKHeap {
         // STEP 2: Heap not full - add directly
         // ─────────────────────────────────────────────────────────────
         if (heap.size() < k) {
-            // Create pattern and add to heap
-            heap.offer(new Pattern(itemset, support, probability));
+            // Add FrequentItemset to heap
+            heap.offer(fi);
 
             // Track for deduplication
-            seenItemsets.add(itemset);
+            seenItemsets.add(fi);
 
             return true;
         }
@@ -169,23 +167,23 @@ public class TopKHeap {
         // ─────────────────────────────────────────────────────────────
         // STEP 3: Heap full - compare with minimum
         // ─────────────────────────────────────────────────────────────
-        Pattern min = heap.peek();  // O(1) - root of min-heap
+        FrequentItemset min = heap.peek();  // O(1) - root of min-heap
 
         // Check if new pattern is STRICTLY better than minimum
         // Strict inequality ensures we only replace when truly better
-        boolean isBetter = (support > min.support) ||
-                          (support == min.support && probability > min.probability);
+        boolean isBetter = (fi.getSupport() > min.getSupport()) ||
+                          (fi.getSupport() == min.getSupport() && fi.getProbability() > min.getProbability());
 
         if (isBetter) {
             // Remove minimum from heap
             heap.poll();  // O(log K)
 
             // Remove from seen set (allow re-insertion if rediscovered)
-            seenItemsets.remove(min.itemset);
+            seenItemsets.remove(min);
 
             // Add new pattern
-            heap.offer(new Pattern(itemset, support, probability));  // O(log K)
-            seenItemsets.add(itemset);
+            heap.offer(fi);  // O(log K)
+            seenItemsets.add(fi);
 
             return true;
         }
@@ -245,7 +243,7 @@ public class TopKHeap {
         }
 
         // Return minimum (root of min-heap)
-        return heap.peek().support;
+        return heap.peek().getSupport();
     }
 
     /**
@@ -254,14 +252,14 @@ public class TopKHeap {
      * Returns copy of heap contents (not the heap itself).
      * Used for final results after mining completes.
      *
-     * Note: Patterns are NOT sorted. Caller should sort if needed:
-     *   patterns.sort((a, b) -> Integer.compare(b.support, a.support));
+     * Note: Patterns are NOT sorted. Caller should sort if needed using:
+     *   patterns.sort(FrequentItemset::compareBySupport);
      *
      * Thread-safe: synchronized for concurrent access.
      *
-     * @return list of all patterns in heap
+     * @return list of all FrequentItemsets in heap
      */
-    public synchronized List<Pattern> getAll() {
+    public synchronized List<FrequentItemset> getAll() {
         // Return copy to prevent external modification of heap
         return new ArrayList<>(heap);
     }

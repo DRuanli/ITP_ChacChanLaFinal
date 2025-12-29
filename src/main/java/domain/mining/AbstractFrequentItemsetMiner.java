@@ -1,7 +1,7 @@
 package domain.mining;
 
 import infrastructure.persistence.UncertainDatabase;
-import domain.model.Pattern;
+import domain.model.FrequentItemset;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -20,9 +20,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *   AbstractFrequentItemsetMiner (this class)
  *       │
  *       ├── mine()                    ← Template Method (final, defines skeleton)
- *       │     ├── computeFrequent1Itemsets()    ← Abstract (subclass implements)
- *       │     ├── initializeDataStructures()    ← Abstract (subclass implements)
- *       │     ├── performRecursiveMining()      ← Abstract (subclass implements)
+ *       │     ├── computeAllSingletonSupports()    ← Abstract (subclass implements)
+ *       │     ├── initializeTopKWithClosedSingletons()    ← Abstract (subclass implements)
+ *       │     ├── performBestFirstMining()      ← Abstract (subclass implements)
  *       │     └── getTopKResults()              ← Abstract (subclass implements)
  *       │
  *       └── ClosureAwareTopKMiner (subclass)
@@ -136,14 +136,14 @@ public abstract class AbstractFrequentItemsetMiner {
      *
      * @return list of top-K frequent closed itemsets
      */
-    public final List<Pattern> mine() {
+    public final List<FrequentItemset> mine() {
         // ═══════════════════════════════════════════════════════════════
         // PHASE 1: Compute ALL 1-itemsets (no filtering)
         // ═══════════════════════════════════════════════════════════════
         long start1 = System.nanoTime();
 
         // Subclass implements this: scans database for frequent single items
-        List<Pattern> frequent1Itemsets = computeFrequent1Itemsets();
+        List<FrequentItemset> frequent1Itemsets = computeAllSingletonSupports();
 
         long phase1Time = (System.nanoTime() - start1) / 1_000_000;  // Convert to ms
 
@@ -153,7 +153,7 @@ public abstract class AbstractFrequentItemsetMiner {
         long start2 = System.nanoTime();
 
         // Subclass implements this: builds PQ, caches, etc.
-        initializeDataStructures(frequent1Itemsets);
+        initializeTopKWithClosedSingletons(frequent1Itemsets);
 
         long phase2Time = (System.nanoTime() - start2) / 1_000_000;
 
@@ -163,7 +163,7 @@ public abstract class AbstractFrequentItemsetMiner {
         long start3 = System.nanoTime();
 
         // Subclass implements this: priority queue processing, closure checking
-        performRecursiveMining(frequent1Itemsets);
+        performBestFirstMining(frequent1Itemsets);
 
         long phase3Time = (System.nanoTime() - start3) / 1_000_000;
 
@@ -178,49 +178,100 @@ public abstract class AbstractFrequentItemsetMiner {
     // ═══════════════════════════════════════════════════════════════════════════
 
     /**
-     * Phase 1: Compute ALL 1-itemsets (no filtering).
+     * Phase 1: Compute probabilistic support for ALL singleton (1-itemset) patterns.
      *
-     * Subclass responsibility:
-     *   - Scan all items in vocabulary
-     *   - Compute probabilistic support for each
-     *   - Return ALL items (no minimum support filtering)
-     *   - Sort results by support descending
+     * <p><b>Key Point:</b> This phase computes support for <b>ALL</b> vocabulary items
+     * without filtering. No threshold-based pruning occurs in Phase 1.</p>
      *
-     * Typically runs in parallel for performance.
+     * <p><b>Subclass Responsibilities:</b></p>
+     * <ul>
+     *   <li>Create singleton itemset for each vocabulary item</li>
+     *   <li>Compute probabilistic support using SupportCalculator</li>
+     *   <li>Cache tidsets and support values for later phases</li>
+     *   <li>Sort singletons by support descending</li>
+     * </ul>
      *
-     * Note: Dynamic minimum support will be derived from Top-K heap in Phase 2.
+     * <p><b>Performance:</b> Typically parallelized for efficiency.</p>
      *
-     * @return list of all 1-itemset patterns (sorted by support DESC)
+     * <p><b>Note:</b> Dynamic minimum support threshold is derived in Phase 2 from
+     * Top-K heap, not in this phase.</p>
+     *
+     * @return list of ALL singleton patterns (sorted by support DESC, no filtering)
      */
-    protected abstract List<Pattern> computeFrequent1Itemsets();
+    protected abstract List<FrequentItemset> computeAllSingletonSupports();
 
     /**
-     * Phase 2: Initialize data structures and fill Top-K with closed 1-itemsets.
+     * Phase 2: Initialize Top-K heap with closed singleton patterns and prepare search.
      *
-     * Subclass responsibility:
-     *   - Check closure of 1-itemsets (in support descending order)
-     *   - Add closed 1-itemsets to Top-K heap
-     *   - Build 2-itemset cache during closure checking
-     *   - Derive dynamic minimum support from Top-K heap
-     *   - Prune 1-itemsets below dynamic threshold
-     *   - Create priority queue with ALL remaining 1-itemsets (both closed and non-closed)
+     * <p><b>Main Objectives:</b></p>
+     * <ol>
+     *   <li>Populate Top-K heap with closed 1-itemsets (establishes initial threshold)</li>
+     *   <li>Seed priority queue for Phase 3 best-first search</li>
+     *   <li>Build 2-itemset cache (side effect of closure checking)</li>
+     * </ol>
      *
-     * @param frequent1Itemsets all 1-itemsets from Phase 1 (sorted by support DESC)
+     * <p><b>Subclass Responsibilities:</b></p>
+     * <ul>
+     *   <li>Check closure of singletons (in support descending order)</li>
+     *   <li>Insert closed singletons into Top-K heap</li>
+     *   <li>Cache all 2-itemsets encountered during closure checking</li>
+     *   <li>Derive dynamic minimum support threshold from Top-K heap</li>
+     *   <li>Build frequent items array for canonical order</li>
+     *   <li>Seed priority queue with promising 2-itemsets for Phase 3</li>
+     * </ul>
+     *
+     * <p><b>Critical Work:</b> Closure checking of singletons is computationally intensive
+     * as it generates O(n²) 2-itemsets where n = vocabulary size.</p>
+     *
+     * @param singletonPatterns all singleton patterns from Phase 1 (sorted by support DESC)
      */
-    protected abstract void initializeDataStructures(List<Pattern> frequent1Itemsets);
+    protected abstract void initializeTopKWithClosedSingletons(List<FrequentItemset> singletonPatterns);
 
     /**
-     * Phase 3: Perform recursive mining to find larger itemsets.
+     * Phase 3: Perform best-first search to discover larger closed itemsets.
      *
-     * Subclass responsibility:
-     *   - Process priority queue
-     *   - Check closure for each candidate
-     *   - Generate extensions and add to queue
-     *   - Update top-K heap with closed patterns
+     * <p><b>Search Strategy:</b> BEST-FIRST (not depth-first or breadth-first)</p>
+     * <ul>
+     *   <li><b>Data Structure:</b> Priority queue ordered by support descending</li>
+     *   <li><b>Ordering:</b> Always processes highest-support candidate next</li>
+     *   <li><b>Iteration:</b> Iterative loop (while !queue.isEmpty()), NOT recursive</li>
+     *   <li><b>Termination:</b> Early termination when best candidate < threshold</li>
+     * </ul>
      *
-     * @param frequent1Itemsets frequent 1-itemsets from Phase 1
+     * <p><b>Why Best-First for Top-K:</b></p>
+     * <ul>
+     *   <li>High-support patterns enter Top-K first → threshold rises quickly</li>
+     *   <li>More aggressive pruning earlier in the search</li>
+     *   <li>Optimal for Top-K mining (proven in academic literature)</li>
+     *   <li>Can terminate as soon as best candidate fails threshold test</li>
+     * </ul>
+     *
+     * <p><b>Algorithm Pseudocode:</b></p>
+     * <pre>
+     * while (!priorityQueue.isEmpty()) {
+     *     candidate = priorityQueue.poll()        // Get BEST (highest support)
+     *     if (candidate.support < threshold) break  // Early termination
+     *
+     *     if (isClosed(candidate))
+     *         topK.insert(candidate)              // Update Top-K
+     *
+     *     extensions = generateExtensions(candidate)
+     *     priorityQueue.addAll(extensions)        // NOT recursive - just enqueue
+     * }
+     * </pre>
+     *
+     * <p><b>Subclass Responsibilities:</b></p>
+     * <ul>
+     *   <li>Poll candidates from priority queue in best-first order</li>
+     *   <li>Check closure for each candidate (with multiple optimizations)</li>
+     *   <li>Generate canonical extensions (maintaining search order)</li>
+     *   <li>Insert closed patterns into Top-K heap</li>
+     *   <li>Add promising extensions back to priority queue</li>
+     * </ul>
+     *
+     * @param singletonPatterns singleton patterns from Phase 1 (may be used for reference)
      */
-    protected abstract void performRecursiveMining(List<Pattern> frequent1Itemsets);
+    protected abstract void performBestFirstMining(List<FrequentItemset> singletonPatterns);
 
     /**
      * Get final top-K results after mining.
@@ -232,5 +283,5 @@ public abstract class AbstractFrequentItemsetMiner {
      *
      * @return list of top-K closed frequent patterns
      */
-    protected abstract List<Pattern> getTopKResults();
+    protected abstract List<FrequentItemset> getTopKResults();
 }

@@ -3,10 +3,8 @@ package domain.mining;
 import domain.support.SupportCalculator;
 import infrastructure.persistence.UncertainDatabase;
 import infrastructure.persistence.Vocabulary;
-import domain.model.Itemset;
-import domain.model.Pattern;
-import domain.model.Tidset;
-import domain.support.GFSupportCalculator;
+import domain.model.*;
+import domain.support.DirectConvolutionSupportCalculator;
 import infrastructure.topK.TopKHeap;
 
 import java.util.*;
@@ -31,9 +29,9 @@ import java.util.stream.Collectors;
  *
  * <p><b>Algorithm Overview - Three Phases:</b></p>
  * <ol>
- *   <li><b>Phase 1 (computeFrequent1Itemsets):</b> Find all single-item patterns and compute their support</li>
- *   <li><b>Phase 2 (initializeDataStructures):</b> Check closure for 1-itemsets, initialize Top-K heap and priority queue</li>
- *   <li><b>Phase 3 (performRecursiveMining):</b> Canonical mining using depth-first search to find all closed itemsets</li>
+ *   <li><b>Phase 1 (computeAllSingletonSupports):</b> Compute probabilistic support for ALL singleton patterns (no filtering)</li>
+ *   <li><b>Phase 2 (initializeTopKWithClosedSingletons):</b> Check closure for singletons, populate Top-K heap, seed priority queue</li>
+ *   <li><b>Phase 3 (performBestFirstMining):</b> Best-first search using priority queue to discover larger closed patterns</li>
  * </ol>
  *
  * <p><b>Pruning Strategies:</b> The algorithm uses multiple pruning techniques to improve efficiency:
@@ -64,14 +62,14 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
      * then by probability (descending). This ordering ensures we explore the most
      * promising candidates first.
      */
-    private PriorityQueue<CandidatePattern> pq;
+    private PriorityQueue<FrequentItemset> pq;
 
     /**
      * Cache storing computed patterns to avoid redundant calculations.
-     * Maps itemsets to their PatternInfo (support, probability, tidset).
+     * Maps itemsets to their CachedFrequentItemset (support, probability, tidset).
      * This is crucial for performance as it enables O(1) lookup for previously computed patterns.
      */
-    private Map<Itemset, PatternInfo> cache;
+    private Map<Itemset, CachedFrequentItemset> cache;
 
     /**
      * Support calculator for computing expected support from probability distributions.
@@ -110,7 +108,7 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
     public TUFCI(UncertainDatabase database, double tau, int k) {
         super(database, tau, k);
         this.vocab = database.getVocabulary();
-        this.calculator = new GFSupportCalculator(tau);
+        this.calculator = new DirectConvolutionSupportCalculator(tau);
         this.cache = new HashMap<>();
     }
 
@@ -152,23 +150,23 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
      * <p><b>Why Parallel Processing?</b> Single-item support calculations are independent,
      * so we can leverage multiple CPU cores to speed up this phase significantly.</p>
      *
-     * <p><b>Pattern vs PatternInfo:</b></p>
+     * <p><b>FrequentItemset vs CachedFrequentItemset:</b></p>
      * <ul>
-     *   <li>Pattern: External model for final results (no tidset to save memory)</li>
-     *   <li>PatternInfo: Internal model with tidset for efficient intersection in later phases</li>
+     *   <li>FrequentItemset: For final results (no tidset to save memory)</li>
+     *   <li>CachedFrequentItemset: Internal cache with tidset for efficient intersection in later phases</li>
      * </ul>
      *
      * @return List of all single-item patterns sorted by support (descending)
      */
     @Override
-    protected List<Pattern> computeFrequent1Itemsets() {
+    protected List<FrequentItemset> computeAllSingletonSupports() {
         int vocabSize = vocab.size();
 
-        // Array to store Pattern results from parallel computation
-        Pattern[] resultArray = new Pattern[vocabSize];
+        // Array to store FrequentItemset results from parallel computation
+        FrequentItemset[] resultArray = new FrequentItemset[vocabSize];
 
         // Thread-safe cache for concurrent writes during parallel processing
-        ConcurrentHashMap<Itemset, PatternInfo> concurrentCache = new ConcurrentHashMap<>(vocabSize);
+        ConcurrentHashMap<Itemset, CachedFrequentItemset> concurrentCache = new ConcurrentHashMap<>(vocabSize);
 
         // Pre-create all singleton itemsets to avoid repeated object creation
         this.singletonCache = new Itemset[vocabSize];
@@ -193,26 +191,26 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
             // Compute expected support and probability using Generating Function approach
             // supportResult[0] = expected support (number of transactions)
             // supportResult[1] = probability of appearing in at least one transaction
-            double[] supportResult = calculator.computeSupportAndProbabilitySparse(tidset, database.size());
+            double[] supportResult = calculator.computeProbabilisticSupportFromTidset(tidset, database.size());
 
             int support = (int) supportResult[0];
             double probability = supportResult[1];
 
             /**
-             * We create both Pattern and PatternInfo here:
+             * We create both FrequentItemset and CachedFrequentItemset here:
              *
-             * - Pattern is used for the final output of Phase 1 (doesn't store tidset)
-             * - PatternInfo is cached for later phases (includes tidset for efficient intersections)
+             * - FrequentItemset is used for the final output of Phase 1 (doesn't store tidset)
+             * - CachedFrequentItemset is cached for later phases (includes tidset for efficient intersections)
              *
              * While this creates some duplication, it allows us to:
-             * 1. Process everything in parallel (both Pattern and PatternInfo creation)
-             * 2. Keep final results memory-efficient (Pattern without tidset)
-             * 3. Enable fast intersection operations in Phase 3 (PatternInfo with tidset)
+             * 1. Process everything in parallel (both object creation)
+             * 2. Keep final results memory-efficient (FrequentItemset without tidset)
+             * 3. Enable fast intersection operations in Phase 3 (CachedFrequentItemset with tidset)
              */
-            Pattern p = new Pattern(singleton, support, probability);
+            FrequentItemset fi = new FrequentItemset(singleton, support, probability);
 
-            resultArray[item] = p;
-            concurrentCache.put(singleton, new PatternInfo(support, probability, tidset));
+            resultArray[item] = fi;
+            concurrentCache.put(singleton, new CachedFrequentItemset(singleton, support, probability, tidset));
         });
 
         /**
@@ -223,12 +221,9 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
          * This ordering is crucial for Phase 2 efficiency, as it allows early termination
          * when the Top-K heap is full.
          */
-        List<Pattern> result = Arrays.stream(resultArray)
-                .sorted((a, b) -> {
-                    int cmp = Integer.compare(b.support, a.support);
-                    if (cmp != 0) return cmp;
-                    return Double.compare(b.probability, a.probability);
-                })
+        List<FrequentItemset> result = Arrays.stream(resultArray)
+                .filter(Objects::nonNull)
+                .sorted(FrequentItemset::compareBySupport)
                 .collect(Collectors.toList());
 
         // Transfer concurrent cache to regular cache for Phase 2 and 3
@@ -270,25 +265,15 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
      * @param frequent1Itemsets The sorted list of 1-itemsets from Phase 1
      */
     @Override
-    protected void initializeDataStructures(List<Pattern> frequent1Itemsets) {
+    protected void initializeTopKWithClosedSingletons(List<FrequentItemset> frequent1Itemsets) {
         // Initialize Top-K heap to track the k best patterns
         this.topK = new TopKHeap(k);
 
         /**
-         * Initialize priority queue with custom comparator:
-         * 1. Support (descending) - explore high-support patterns first
-         * 2. Itemset size (ascending) - prefer smaller patterns at same support
-         * 3. Probability (descending) - break final ties with probability
+         * Initialize priority queue with custom comparator using static method.
+         * Ordering: support (DESC) → size (ASC) → probability (DESC)
          */
-        this.pq = new PriorityQueue<>((a, b) -> {
-            int cmp = Integer.compare(b.support, a.support);
-            if (cmp != 0) return cmp;
-
-            cmp = Integer.compare(a.itemset.size(), b.itemset.size());
-            if (cmp != 0) return cmp;
-
-            return Double.compare(b.probability, a.probability);
-        });
+        this.pq = new PriorityQueue<>(FrequentItemset::compareForPriorityQueue);
 
         // Minimum support threshold - starts at 0, increases as Top-K fills up
         int minsup = 0;
@@ -297,10 +282,9 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
         int processedItemCount = 0;
 
         // Process each 1-itemset in support-descending order
-        for (Pattern pattern : frequent1Itemsets) {
-            Itemset item = pattern.itemset;
-            int support = pattern.support;
-            double probability = pattern.probability;
+        for (FrequentItemset fi : frequent1Itemsets) {
+            int support = fi.getSupport();
+            double probability = fi.getProbability();
 
             /**
              * Pruning Strategy 1: Phase 1 Early Termination
@@ -317,18 +301,15 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
             processedItemCount++;
 
             // Check if this 1-itemset is closed
-            boolean isClosed = checkClosure1Itemset(item, support, frequent1Itemsets, minsup);
+            boolean isClosed = checkClosure1Itemset(fi, support, frequent1Itemsets, minsup);
 
             // If closed, try to insert into Top-K
             if (isClosed) {
-                boolean inserted = topK.insert(item, support, probability);
+                boolean inserted = topK.insert(fi);
 
                 // Update minimum support threshold when Top-K becomes full
-                if (inserted) {
-                    if (topK.isFull()) {
-                        int newMinsup = topK.getMinSupport();
-                        minsup = newMinsup;
-                    }
+                if (inserted && topK.isFull()) {
+                    minsup = topK.getMinSupport();
                 }
             }
         }
@@ -340,11 +321,11 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
         List<Integer> frequentItemIndices = new ArrayList<>();
 
         for (int i = 0; i < processedItemCount; i++) {
-            Pattern p = frequent1Itemsets.get(i);
+            FrequentItemset fi = frequent1Itemsets.get(i);
 
-            if (p.support >= minsup) {
+            if (fi.getSupport() >= minsup) {
                 // Extract the item ID from the singleton itemset
-                frequentItemIndices.add(p.itemset.getItems().get(0));
+                frequentItemIndices.add(fi.getItems().get(0));
             }
         }
 
@@ -362,14 +343,15 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
          * Add those with support >= minsup to the priority queue to start Phase 3.
          * This bootstraps the canonical mining process.
          */
-        for (Map.Entry<Itemset, PatternInfo> entry : cache.entrySet()) {
+        for (Map.Entry<Itemset, CachedFrequentItemset> entry : cache.entrySet()) {
             Itemset itemset = entry.getKey();
 
             if (itemset.size() == 2) {
-                PatternInfo info = entry.getValue();
+                CachedFrequentItemset cached = entry.getValue();
 
-                if (info.support >= minsup) {
-                    pq.add(new CandidatePattern(itemset, info.support, info.probability));
+                if (cached.getSupport() >= minsup) {
+                    // Add FrequentItemset to PQ (tidset not needed in PQ)
+                    pq.add(cached.toFrequentItemset());
                 }
             }
         }
@@ -403,11 +385,11 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
      * @param frequent1itemsets The list of 1-itemsets (not used in this implementation)
      */
     @Override
-    protected void performRecursiveMining(List<Pattern> frequent1itemsets) {
+    protected void performBestFirstMining(List<FrequentItemset> frequent1itemsets) {
         // Process candidates in priority order until queue is empty
         while (!pq.isEmpty()) {
             // Get the most promising candidate (highest support)
-            CandidatePattern candidate = pq.poll();
+            FrequentItemset candidate = pq.poll();
 
             int threshold = getThreshold();
 
@@ -419,7 +401,7 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
              * 2. All remaining candidates in PQ also have support <= this candidate (PQ ordering)
              * 3. Therefore, we can terminate the entire search
              */
-            if (candidate.support < threshold) {
+            if (candidate.getSupport() < threshold) {
                 break;
             }
 
@@ -430,12 +412,14 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
              * 1. Verifies if the candidate is closed
              * 2. Generates all valid extensions in canonical order
              * 3. Applies multiple pruning strategies to reduce computation
+             *
+             * Pass cached threshold to avoid redundant synchronized getThreshold() call
              */
-            ClosureCheckResult result = checkClosureAndGenerateExtensions(candidate);
+            ClosureCheckResult result = checkClosureAndGenerateExtensions(candidate, threshold);
 
             // If closed, add to Top-K (which will update threshold if needed)
-            if (result.isClosed) {
-                topK.insert(candidate.itemset, candidate.support, candidate.probability);
+            if (result.isClosed()) {
+                topK.insert(candidate);
             }
 
             /**
@@ -445,8 +429,8 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
              * and only add extensions that meet the threshold.
              */
             int newThreshold = getThreshold();
-            for (CandidatePattern ext : result.extensions) {
-                if (ext.support >= newThreshold) {
+            for (FrequentItemset ext : result.getExtensions()) {
+                if (ext.getSupport() >= newThreshold) {
                     pq.add(ext);
                 }
             }
@@ -468,85 +452,14 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
      * @return List of top-k patterns sorted by support then probability
      */
     @Override
-    protected List<Pattern> getTopKResults() {
+    protected List<FrequentItemset> getTopKResults() {
         // Get all patterns from heap
-        List<Pattern> results = topK.getAll();
+        List<FrequentItemset> results = topK.getAll();
 
-        // Sort by support DESC, then probability DESC
-        results.sort((a, b) -> {
-            int cmp = Integer.compare(b.support, a.support);
-            if (cmp != 0) return cmp;
-            return Double.compare(b.probability, a.probability);
-        });
+        // Sort by support DESC, then probability DESC using static comparator
+        results.sort(FrequentItemset::compareBySupport);
 
         return results;
-    }
-
-    // ==================== Helper Classes ====================
-
-    /**
-     * Represents a candidate pattern during mining.
-     *
-     * <p>Lightweight class used in the priority queue. Contains only essential
-     * information needed for prioritization and closure checking.</p>
-     */
-    private static class CandidatePattern {
-        /** The itemset being considered */
-        final Itemset itemset;
-
-        /** Expected support of the itemset */
-        final int support;
-
-        /** Probability of the itemset */
-        final double probability;
-
-        CandidatePattern(Itemset itemset, int support, double probability) {
-            this.itemset = itemset;
-            this.support = support;
-            this.probability = probability;
-        }
-    }
-
-    /**
-     * Stores computed pattern information for caching.
-     *
-     * <p>Includes the tidset to enable efficient intersection operations.
-     * Cached patterns avoid redundant support calculations.</p>
-     */
-    private static class PatternInfo {
-        /** Expected support of the pattern */
-        final int support;
-
-        /** Probability of the pattern */
-        final double probability;
-
-        /** Transaction ID set with probabilities (for intersection) */
-        final Tidset tidset;
-
-        PatternInfo(int support, double probability, Tidset tidset) {
-            this.support = support;
-            this.probability = probability;
-            this.tidset = tidset;
-        }
-    }
-
-    /**
-     * Result of closure checking operation.
-     *
-     * <p>Contains both the closure status and the list of valid extensions
-     * generated during the closure check process.</p>
-     */
-    private static class ClosureCheckResult {
-        /** True if the itemset is closed (no superset with same support) */
-        final boolean isClosed;
-
-        /** List of valid extension candidates to explore next */
-        final List<CandidatePattern> extensions;
-
-        ClosureCheckResult(boolean isClosed, List<CandidatePattern> extensions) {
-            this.isClosed = isClosed;
-            this.extensions = extensions;
-        }
     }
 
     // ==================== Utility Methods ====================
@@ -586,8 +499,8 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
     private int getItemSupport(int item) {
         if (item < 0 || item >= singletonCache.length) return 0;
         Itemset singleton = singletonCache[item];
-        PatternInfo info = cache.get(singleton);
-        return (info != null) ? info.support : 0;
+        CachedFrequentItemset cached = cache.get(singleton);
+        return (cached != null) ? cached.getSupport() : 0;
     }
 
     /**
@@ -600,11 +513,12 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
      * @return The maximum item ID, or -1 if empty
      */
     private int getMaxItemIndex(Itemset itemset) {
-        List<Integer> items = itemset.getItems();
-        if (items.isEmpty()) return -1;
+        // Use primitive array to avoid boxing overhead
+        int[] items = itemset.getItemsArray();
+        if (items.length == 0) return -1;
 
         // Items are stored in sorted order, so last item is maximum
-        return items.get(items.size() - 1);
+        return items[items.length - 1];
     }
 
     // ==================== Closure Checking Methods ====================
@@ -634,15 +548,14 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
      * @param minsup The current minimum support threshold
      * @return True if the 1-itemset is closed, false otherwise
      */
-    private boolean checkClosure1Itemset(Itemset oneItem, int supOneItem,
-                                         List<Pattern> frequent1Itemset, int minsup) {
+    private boolean checkClosure1Itemset(FrequentItemset oneItemFI, int supOneItem,
+                                         List<FrequentItemset> frequent1Itemset, int minsup) {
         // Extract the item ID from the singleton itemset
-        int itemA = oneItem.getItems().get(0);
+        int itemA = oneItemFI.getItems().get(0);
 
         // Check closure against all other items
-        for (Pattern otherPattern : frequent1Itemset) {
-            Itemset otherItem = otherPattern.itemset;
-            int itemB = otherItem.getItems().get(0);
+        for (FrequentItemset otherFI : frequent1Itemset) {
+            int itemB = otherFI.getItems().get(0);
 
             // Skip self-comparison
             if (itemA == itemB) continue;
@@ -654,31 +567,31 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
              * Items with lower support cannot violate closure property because:
              * support(A ∪ B) <= min(support(A), support(B)) < support(A)
              */
-            if (otherPattern.support < supOneItem) break;
+            if (otherFI.getSupport() < supOneItem) break;
 
             // Create the union itemset A ∪ B
-            Itemset unionItemset = oneItem.union(otherItem);
+            Itemset unionItemset = oneItemFI.union(otherFI);
 
             // Try to retrieve from cache first
-            PatternInfo cached = cache.get(unionItemset);
+            CachedFrequentItemset cached = cache.get(unionItemset);
             int supAB;
             double probAB;
             Tidset tidsetAB;
 
             if (cached != null) {
                 // Cache hit - reuse previously computed values
-                supAB = cached.support;
-                probAB = cached.probability;
-                tidsetAB = cached.tidset;
+                supAB = cached.getSupport();
+                probAB = cached.getProbability();
+                tidsetAB = cached.getTidset();
             } else {
                 // Cache miss - compute support for A ∪ B
 
                 // Intersect tidsets: transactions containing both A and B
-                tidsetAB = cache.get(oneItem).tidset.intersect(cache.get(otherItem).tidset);
+                tidsetAB = cache.get(oneItemFI).getTidset().intersect(cache.get(otherFI).getTidset());
 
                 if (!tidsetAB.isEmpty()) {
                     // Compute support using the Generating Function calculator
-                    double[] result = calculator.computeSupportAndProbabilitySparse(tidsetAB, database.size());
+                    double[] result = calculator.computeProbabilisticSupportFromTidset(tidsetAB, database.size());
                     supAB = (int) result[0];
                     probAB = result[1];
                 } else {
@@ -693,8 +606,8 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
                  * We only cache itemsets that might be useful in Phase 3.
                  * If otherItem's support < minsup, it won't be used for extensions.
                  */
-                if (otherPattern.support >= minsup) {
-                    cache.put(unionItemset, new PatternInfo(supAB, probAB, tidsetAB));
+                if (otherFI.getSupport() >= minsup) {
+                    cache.put(unionItemset, new CachedFrequentItemset(unionItemset, supAB, probAB, tidsetAB));
                 }
             }
 
@@ -741,19 +654,18 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
      * </ul>
      *
      * @param candidate The candidate pattern to check
+     * @param threshold The current minimum support threshold (cached from caller to avoid synchronized access)
      * @return ClosureCheckResult containing closure status and valid extensions
      */
-    private ClosureCheckResult checkClosureAndGenerateExtensions(CandidatePattern candidate) {
-        Itemset X = candidate.itemset;
-        int supX = candidate.support;
-
-        int threshold = getThreshold();
+    private ClosureCheckResult checkClosureAndGenerateExtensions(FrequentItemset candidate, int threshold) {
+        // candidate IS-A Itemset, so we can use it directly as X
+        int supX = candidate.getSupport();
         boolean isClosed = true;  // Assume closed until proven otherwise
 
-        List<CandidatePattern> extensions = new ArrayList<>();
+        List<FrequentItemset> extensions = new ArrayList<>();
 
         // Get maximum item in X for canonical order enforcement
-        int maxItemInX = getMaxItemIndex(X);
+        int maxItemInX = getMaxItemIndex(candidate);
 
         /**
          * Closure checking optimization flag.
@@ -768,8 +680,8 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
         for (int idx = 0; idx < frequentItemCount; idx++) {
             int item = frequentItems[idx];
 
-            // Skip if item already in X
-            if (X.contains(item)) continue;
+            // Skip if item already in candidate itemset
+            if (candidate.contains(item)) continue;
 
             int itemSupport = getItemSupport(item);
 
@@ -826,17 +738,18 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
              * Only applies when generating extensions and Top-K is full.
              */
             if (topK.isFull() && needExtension) {
-                for (int existingItem : X.getItems()) {
-                    // Create 2-itemset {existingItem, item} in canonical order
-                    Itemset twoItemset = new Itemset(vocab);
-                    twoItemset.add(Math.min(existingItem, item));
-                    twoItemset.add(Math.max(existingItem, item));
+                // Use primitive array to avoid Integer boxing/unboxing overhead
+                for (int existingItem : candidate.getItemsArray()) {
+                    // Create 2-itemset {existingItem, item} using factory method (optimized)
+                    Itemset twoItemset = Itemset.of(vocab,
+                        Math.min(existingItem, item),
+                        Math.max(existingItem, item));
 
                     // Look up cached support of this 2-itemset
-                    PatternInfo cachedSubset = cache.get(twoItemset);
+                    CachedFrequentItemset cachedSubset = cache.get(twoItemset);
                     if (cachedSubset != null) {
                         // Tighten upper bound
-                        upperBound = Math.min(upperBound, cachedSubset.support);
+                        upperBound = Math.min(upperBound, cachedSubset.getSupport());
 
                         // Early exit if upper bound already too low
                         if (upperBound < threshold) {
@@ -866,37 +779,37 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
                 continue;
             }
 
-            // At this point, we need to compute support of X ∪ {item}
+            // At this point, we need to compute support of candidate ∪ {item}
 
             Itemset itemItemset = singletonCache[item];
-            Itemset Xe = X.union(itemItemset);  // Extension: X ∪ {item}
+            Itemset Xe = candidate.union(itemItemset);  // Extension: candidate ∪ {item}
             int supXe;
             double probXe;
             Tidset tidsetXe;
 
             // Try to retrieve from cache first
-            PatternInfo cached = cache.get(Xe);
+            CachedFrequentItemset cached = cache.get(Xe);
             if (cached != null) {
                 // Cache hit - reuse values
-                supXe = cached.support;
-                probXe = cached.probability;
-                tidsetXe = cached.tidset;
+                supXe = cached.getSupport();
+                probXe = cached.getProbability();
+                tidsetXe = cached.getTidset();
             } else {
                 // Cache miss - need to compute support
 
-                // Get cached tidsets for X and item
-                PatternInfo xInfo = cache.get(X);
-                PatternInfo itemInfo = cache.get(itemItemset);
+                // Get cached tidsets for candidate and item
+                CachedFrequentItemset xInfo = cache.get(candidate);
+                CachedFrequentItemset itemInfo = cache.get(itemItemset);
 
                 // Compute intersection of tidsets
                 if (xInfo == null || itemInfo == null) {
                     // Fallback: retrieve from database (should rarely happen)
-                    Tidset tidsetX = database.getTidset(X);
+                    Tidset tidsetX = database.getTidset(candidate);
                     Tidset tidsetItem = database.getTidset(itemItemset);
                     tidsetXe = tidsetX.intersect(tidsetItem);
                 } else {
                     // Normal case: intersect cached tidsets
-                    tidsetXe = xInfo.tidset.intersect(itemInfo.tidset);
+                    tidsetXe = xInfo.getTidset().intersect(itemInfo.getTidset());
                 }
 
                 int tidsetSize = tidsetXe.size();
@@ -917,7 +830,7 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
                     supXe = 0;
                     probXe = 0.0;
                     // Cache the zero-support result to avoid recomputing
-                    cache.put(Xe, new PatternInfo(0, 0.0, tidsetXe));
+                    cache.put(Xe, new CachedFrequentItemset(Xe, 0, 0.0, tidsetXe));
                     continue;
                 }
 
@@ -935,7 +848,7 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
                         supXe = 0;
                         probXe = 0.0;
                         // Cache the zero-support result
-                        cache.put(Xe, new PatternInfo(0, 0.0, tidsetXe));
+                        cache.put(Xe, new CachedFrequentItemset(Xe, 0, 0.0, tidsetXe));
                         continue;
                     }
                     // We still need extension, but can skip closure check
@@ -949,13 +862,13 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
                  * All the pruning strategies above aim to avoid this computation
                  * when we know the result won't be useful.
                  */
-                double[] result = calculator.computeSupportAndProbabilitySparse(
+                double[] result = calculator.computeProbabilisticSupportFromTidset(
                         tidsetXe, database.size());
                 supXe = (int) result[0];
                 probXe = result[1];
 
                 // Cache the computed result for potential reuse
-                cache.put(Xe, new PatternInfo(supXe, probXe, tidsetXe));
+                cache.put(Xe, new CachedFrequentItemset(Xe, supXe, probXe, tidsetXe));
             }
 
             /**
@@ -974,7 +887,7 @@ public class TUFCI extends AbstractFrequentItemsetMiner {
              * meets the threshold.
              */
             if (shouldGenerateExtension) {
-                extensions.add(new CandidatePattern(Xe, supXe, probXe));
+                extensions.add(new FrequentItemset(Xe, supXe, probXe));
             }
         }
 

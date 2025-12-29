@@ -5,47 +5,63 @@ import domain.model.Tidset;
 /**
  * SupportCalculator - Strategy Pattern interface for probabilistic support computation.
  *
- * In uncertain databases, support is not a simple count but a PROBABILISTIC measure:
- *   - Each item has existence probability p in each transaction
- *   - Support follows a probability distribution, not a single value
- *   - Probabilistic support = max{s : P(support ≥ s) ≥ τ}
+ * <p><b>Uncertain Database Model:</b></p>
+ * <p>In uncertain databases, items have existential probabilities. Support is not a
+ * deterministic count but a probabilistic measure computed using generating functions.</p>
  *
- * Mathematical Background:
- *   For itemset X in uncertain database:
- *   - Each transaction t has probability p_t that X appears
- *   - Total support S = Σ(indicator variables), where each is Bernoulli(p_t)
- *   - P(S = s) follows Poisson Binomial distribution
- *   - Generating Function: Π(1-p_t + p_t·x) encodes this distribution
+ * <p><b>Mathematical Foundation:</b></p>
+ * <ul>
+ *   <li><b>Existence Probability:</b> P(i,t) ∈ [0,1] - probability item i exists in transaction t</li>
+ *   <li><b>Itemset Probability:</b> P(X ⊆ t) = ∏ P(i,t) for all i ∈ X</li>
+ *   <li><b>Support Distribution:</b> P(sup(X) = s) computed via generating functions</li>
+ *   <li><b>Frequentness:</b> P(sup(X) ≥ s) - tail probability (cumulative)</li>
+ *   <li><b>Probabilistic Support:</b> ProbSup_τ(X) = max{s : P(sup(X) ≥ s) ≥ τ}</li>
+ * </ul>
+ *
+ * <p><b>Generating Function Method:</b></p>
+ * <p>G(x) = ∏[(1 - p_t) + p_t·x] where coefficient of x^s gives P(sup(X) = s)</p>
+ *
+ * <p><b>Academic References:</b></p>
+ * <ul>
+ *   <li>Chui et al. - Mining frequent itemsets from uncertain data</li>
+ *   <li>Bernecker et al. - Probabilistic frequent itemset mining in uncertain databases</li>
+ *   <li>Aggarwal et al. - Frequent pattern mining with uncertain data</li>
+ * </ul>
  *
  * @author Dang Nguyen Le
  */
 public interface SupportCalculator {
 
     /**
-     * Compute probabilistic support from transaction probability array.
+     * Computes only the probabilistic support value (without frequentness).
      *
-     * Definition: ProbSupport_τ(X) = max{s : P(support(X) ≥ s) ≥ τ}
+     * <p><b>Definition:</b> ProbSup_τ(X) = max{s : P(sup(X) ≥ s) ≥ τ}</p>
      *
-     * @param transactionProbs array where transactionProbs[t] = P(itemset in transaction t)
-     * @param minRequiredSupport hint for early termination (may be ignored)
-     * @return probabilistic support value
+     * <p><b>Note:</b> {@link #computeProbabilisticSupportWithFrequentness(double[])}
+     * or {@link #computeProbabilisticSupportFromTidset(Tidset, int)} are preferred
+     * as they return both support and frequentness in a single computation.</p>
      *
-     * Note: This method is part of interface contract but computeSupportAndProbability()
-     *       or computeSupportAndProbabilitySparse() are preferred in practice.
+     * @param existenceProbabilities array where existenceProbabilities[t] = P(itemset ⊆ transaction t)
+     * @param minRequiredSupport hint for early termination (implementation-specific, may be ignored)
+     * @return the probabilistic support value (maximum s where frequentness ≥ τ)
      */
-    int computeProbabilisticSupport(double[] transactionProbs, int minRequiredSupport);
+    int computeProbabilisticSupport(double[] existenceProbabilities, int minRequiredSupport);
 
     /**
-     * Compute probability that itemset achieves at least given support.
+     * Computes frequentness (tail probability) at a given support level.
      *
-     * @param transactionProbs array of transaction probabilities
-     * @param support target support value
-     * @return P(support ≥ s), the frequentness at support level s
+     * <p><b>Definition:</b> Frequentness at level s = P(sup(X) ≥ s)</p>
      *
-     * Note: This method is part of interface contract but computeSupportAndProbability()
-     *       or computeSupportAndProbabilitySparse() are preferred in practice.
+     * <p>This is the cumulative probability that the itemset appears in at least s transactions.</p>
+     *
+     * <p><b>Note:</b> {@link #computeProbabilisticSupportWithFrequentness(double[])}
+     * is preferred when both support and frequentness are needed.</p>
+     *
+     * @param existenceProbabilities array of transaction existence probabilities
+     * @param supportLevel target support level s
+     * @return P(sup(X) ≥ supportLevel) - probability of achieving at least that support
      */
-    double computeProbability(double[] transactionProbs, int support);
+    double computeProbability(double[] existenceProbabilities, int supportLevel);
 
     /**
      * Get name of this calculator strategy (for logging/debugging).
@@ -55,44 +71,75 @@ public interface SupportCalculator {
     String getStrategyName();
 
     /**
-     * Compute both support and probability in single call.
+     * Computes probabilistic support and frequentness in a single operation.
      *
-     * More efficient than calling computeProbabilisticSupport() and
-     * computeProbability() separately because distribution is computed only once.
+     * <p><b>Definition:</b></p>
+     * <ul>
+     *   <li><b>Probabilistic Support:</b> ProbSup_τ(X) = max{s : P(sup(X) ≥ s) ≥ τ}</li>
+     *   <li><b>Frequentness:</b> P(sup(X) ≥ ProbSup_τ(X)) - the actual probability at that support level</li>
+     * </ul>
      *
-     * @param transactionProbs array of transaction probabilities
-     * @return array [support, probability] where:
-     *         support = max s where P(support ≥ s) ≥ τ
-     *         probability = P(support ≥ computed_support)
+     * <p><b>Why Combined Computation:</b></p>
+     * <p>Computing both values together is more efficient than separate calls because
+     * the support distribution P(sup(X) = s) is computed only once. The frequentness
+     * is obtained as a byproduct of finding the probabilistic support threshold.</p>
+     *
+     * <p><b>Algorithm:</b></p>
+     * <ol>
+     *   <li>Compute support distribution using generating functions: G(x) = ∏[(1-p_t) + p_t·x]</li>
+     *   <li>Extract coefficients to get P(sup(X) = s) for each s</li>
+     *   <li>Compute cumulative probabilities (frequentness): P(sup(X) ≥ s)</li>
+     *   <li>Find maximum s where frequentness ≥ τ (the probabilistic support)</li>
+     *   <li>Return both the support value and its corresponding frequentness</li>
+     * </ol>
+     *
+     * @param existenceProbabilities array where existenceProbabilities[t] = P(itemset ⊆ transaction t)
+     * @return array [probabilisticSupport, frequentness] where:
+     *         <ul>
+     *           <li>probabilisticSupport = max{s : P(sup(X) ≥ s) ≥ τ} (integer, returned as double)</li>
+     *           <li>frequentness = P(sup(X) ≥ probabilisticSupport) ∈ [τ, 1]</li>
+     *         </ul>
      */
-    double[] computeSupportAndProbability(double[] transactionProbs);
+    double[] computeProbabilisticSupportWithFrequentness(double[] existenceProbabilities);
 
     /**
-     * Compute support and probability directly from sparse Tidset.
+     * Computes probabilistic support and frequentness from sparse Tidset representation.
      *
-     * OPTIMIZATION: Avoids allocating dense array for sparse itemsets.
+     * <p><b>Input Format:</b></p>
+     * <p>Tidset (Transaction ID Set) is a sparse representation containing only
+     * transactions where the itemset has non-zero probability. This avoids storing
+     * zeros for transactions where the itemset cannot appear.</p>
      *
-     * Memory comparison:
-     *   - Dense: O(totalTransactions) array allocation
-     *   - Sparse: O(tidset.size()) - much smaller for sparse itemsets
+     * <p><b>Memory Efficiency:</b></p>
+     * <p>For sparse itemsets (appearing in few transactions), this method is much
+     * more memory-efficient than dense array representation:</p>
+     * <ul>
+     *   <li><b>Dense:</b> O(totalTransactions) array - e.g., 100,000 doubles = 800 KB</li>
+     *   <li><b>Sparse:</b> O(tidset.size()) - e.g., 500 entries = ~4 KB</li>
+     *   <li><b>Savings:</b> 200x less memory for 0.5% sparsity</li>
+     * </ul>
      *
-     * Example: Database has 100,000 transactions, itemset appears in 500
-     *   - Dense: allocate double[100000] = 800KB
-     *   - Sparse: only process 500 entries = ~4KB
+     * <p><b>Implementation Note:</b></p>
+     * <p>Default implementation converts Tidset to dense array and delegates to
+     * {@link #computeProbabilisticSupportWithFrequentness(double[])}. Subclasses
+     * can override for direct sparse computation without materialization.</p>
      *
-     * Default implementation converts to dense (for calculators that don't
-     * support sparse). Override for memory-efficient sparse computation.
+     * <p><b>Equivalence:</b></p>
+     * <p>This method computes mathematically identical results to the dense version.
+     * Only the input representation differs - the generating function algorithm
+     * processes the same probabilities.</p>
      *
-     * @param tidset sparse transaction ID set with probabilities
-     * @param totalTransactions total number of transactions in database
-     * @return array [support, probability]
+     * @param tidset sparse transaction ID set with existence probabilities
+     * @param databaseSize total number of transactions in database
+     * @return array [probabilisticSupport, frequentness] - same format as
+     *         {@link #computeProbabilisticSupportWithFrequentness(double[])}
      */
-    default double[] computeSupportAndProbabilitySparse(Tidset tidset, int totalTransactions) {
+    default double[] computeProbabilisticSupportFromTidset(Tidset tidset, int databaseSize) {
         // Default: convert sparse tidset to dense probability array
         // Subclasses can override for memory-efficient sparse computation
-        double[] probs = tidset.toTransactionProbabilities(totalTransactions);
+        double[] existenceProbabilities = tidset.toTransactionProbabilities(databaseSize);
 
         // Delegate to dense computation
-        return computeSupportAndProbability(probs);
+        return computeProbabilisticSupportWithFrequentness(existenceProbabilities);
     }
 }

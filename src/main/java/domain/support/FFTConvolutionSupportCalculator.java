@@ -5,7 +5,7 @@ import shared.Constants;
 import infrastructure.math.FFT;
 
 /**
- * FFTSupportCalculator - FFT-based probabilistic support calculator.
+ * FFTConvolutionSupportCalculator - FFT-based probabilistic support calculator.
  *
  * Uses Fast Fourier Transform for polynomial multiplication.
  *
@@ -45,14 +45,14 @@ import infrastructure.math.FFT;
  *
  * @author Dang Nguyen Le
  */
-public class FFTSupportCalculator extends AbstractSupportCalculator {
+public class FFTConvolutionSupportCalculator extends AbstractSupportCalculator {
 
     /**
      * Constructor.
      *
      * @param tau probability threshold (0 < τ ≤ 1)
      */
-    public FFTSupportCalculator(double tau) {
+    public FFTConvolutionSupportCalculator(double tau) {
         super(tau);
     }
 
@@ -110,7 +110,7 @@ public class FFTSupportCalculator extends AbstractSupportCalculator {
      * @return [support, probability]
      */
     @Override
-    public double[] computeSupportAndProbability(double[] transactionProbs) {
+    public double[] computeProbabilisticSupportWithFrequentness(double[] transactionProbs) {
         // Single distribution computation
         double[] distribution = computeDistributionViaFFT(transactionProbs);
         double[] frequentness = computeFrequentness(distribution);
@@ -286,7 +286,7 @@ public class FFTSupportCalculator extends AbstractSupportCalculator {
     }
 
     @Override
-    public double[] computeSupportAndProbabilitySparse(Tidset tidset, int totalTransactions) {
+    public double[] computeProbabilisticSupportFromTidset(Tidset tidset, int totalTransactions) {
         if (tidset.isEmpty()) {
             return new double[]{0, 0.0};
         }
@@ -300,6 +300,6 @@ public class FFTSupportCalculator extends AbstractSupportCalculator {
         }
 
         // FFT on sparse array (size m, not totalTransactions)
-        return computeSupportAndProbability(probs);
+        return computeProbabilisticSupportWithFrequentness(probs);
     }
 }

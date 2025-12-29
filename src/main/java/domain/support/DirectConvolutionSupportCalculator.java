@@ -4,7 +4,7 @@ import domain.model.Tidset;
 import shared.Constants;
 
 /**
- * GFSupportCalculator - Generating Function based probabilistic support calculator.
+ * DirectConvolutionSupportCalculator - Generating Function based probabilistic support calculator.
  *
  * Uses Dynamic Programming to compute probability distribution via polynomial multiplication.
  *
@@ -52,14 +52,14 @@ import shared.Constants;
  *
  * @author Dang Nguyen Le
  */
-public class GFSupportCalculator extends AbstractSupportCalculator {
+public class DirectConvolutionSupportCalculator extends AbstractSupportCalculator {
 
     /**
      * Constructor.
      *
      * @param tau probability threshold (0 < τ ≤ 1)
      */
-    public GFSupportCalculator(double tau) {
+    public DirectConvolutionSupportCalculator(double tau) {
         // Call parent constructor for validation
         super(tau);
     }
@@ -122,7 +122,7 @@ public class GFSupportCalculator extends AbstractSupportCalculator {
      * @return [support, probability]
      */
     @Override
-    public double[] computeSupportAndProbability(double[] transactionProbs) {
+    public double[] computeProbabilisticSupportWithFrequentness(double[] transactionProbs) {
         // Single distribution computation
         double[] distribution = computeDistributionViaGeneratingFunction(transactionProbs);
         double[] frequentness = computeFrequentness(distribution);
@@ -239,7 +239,7 @@ public class GFSupportCalculator extends AbstractSupportCalculator {
      * @return [support, probability]
      */
     @Override
-    public double[] computeSupportAndProbabilitySparse(Tidset tidset, int totalTransactions) {
+    public double[] computeProbabilisticSupportFromTidset(Tidset tidset, int totalTransactions) {
         // Handle empty tidset
         if (tidset.isEmpty()) {
             return new double[]{0, 0.0};

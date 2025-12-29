@@ -255,20 +255,24 @@ public class UncertainDatabase {
             );
         }
 
-        // Get list of items in itemset
-        List<Integer> items = itemset.getItems();
+        // Get items as primitive array to avoid boxing overhead
+        int[] items = itemset.getItemsArray();
 
         // Handle empty itemset
-        if (items.isEmpty()) return new Tidset();
+        if (items.length == 0) return new Tidset();
 
         // Handle singleton itemset (no intersection needed)
-        if (items.size() == 1) {
-            return getTidset(items.get(0));
+        if (items.length == 1) {
+            return getTidset(items[0]);
         }
 
         // OPTIMIZATION: Sort items by tidset size (ascending)
         // Smallest tidset first minimizes intermediate result sizes
-        List<Integer> sortedItems = new ArrayList<>(items);
+        // Need to box into List for sorting (unavoidable here)
+        List<Integer> sortedItems = new ArrayList<>(items.length);
+        for (int item : items) {
+            sortedItems.add(item);
+        }
         sortedItems.sort(Comparator.comparingInt(item -> {
             Tidset t = verticalDB.get(item);
             return t != null ? t.size() : 0;

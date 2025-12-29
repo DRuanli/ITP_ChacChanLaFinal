@@ -4,7 +4,7 @@ import domain.model.Tidset;
 import shared.Constants;
 
 /**
- * DivideAndConquerCalculator - Hierarchical probabilistic support calculator.
+ * RecursiveConvolutionSupportCalculator - Hierarchical probabilistic support calculator.
  *
  * ═══════════════════════════════════════════════════════════════════════════════
  * ALGORITHM OVERVIEW
@@ -33,14 +33,14 @@ import shared.Constants;
  *
  * @author Dang Nguyen Le
  */
-public class DivideAndConquerCalculator extends AbstractSupportCalculator {
+public class RecursiveConvolutionSupportCalculator extends AbstractSupportCalculator {
 
     /**
      * Constructor.
      *
      * @param tau probability threshold (0 < τ ≤ 1)
      */
-    public DivideAndConquerCalculator(double tau) {
+    public RecursiveConvolutionSupportCalculator(double tau) {
         super(tau);
     }
 
@@ -105,7 +105,7 @@ public class DivideAndConquerCalculator extends AbstractSupportCalculator {
      * @return [support, probability]
      */
     @Override
-    public double[] computeSupportAndProbability(double[] transactionProbs) {
+    public double[] computeProbabilisticSupportWithFrequentness(double[] transactionProbs) {
         // Single distribution computation
         double[] distribution = divideAndConquer(transactionProbs, 0, transactionProbs.length);
         double[] frequentness = computeFrequentness(distribution);
@@ -126,7 +126,7 @@ public class DivideAndConquerCalculator extends AbstractSupportCalculator {
      * @return [support, probability]
      */
     @Override
-    public double[] computeSupportAndProbabilitySparse(Tidset tidset, int totalTransactions) {
+    public double[] computeProbabilisticSupportFromTidset(Tidset tidset, int totalTransactions) {
         // ═════════════════════════════════════════════════════════════════
         // EMPTY TIDSET CHECK
         // ═════════════════════════════════════════════════════════════════
@@ -160,7 +160,7 @@ public class DivideAndConquerCalculator extends AbstractSupportCalculator {
         // ═════════════════════════════════════════════════════════════════
         // Uses same algorithm as dense version, but on m items instead of n
         // ═════════════════════════════════════════════════════════════════
-        return computeSupportAndProbability(probs);
+        return computeProbabilisticSupportWithFrequentness(probs);
     }
 
     /**

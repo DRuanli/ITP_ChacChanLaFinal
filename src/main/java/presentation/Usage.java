@@ -1,6 +1,6 @@
 package presentation;
 
-import domain.model.Pattern;
+import domain.model.FrequentItemset;
 import domain.observer.PhaseTimingObserver;
 
 import java.util.List;
@@ -27,7 +27,7 @@ public class Usage {
         System.out.println();
     }
 
-    public static void printResults(List<Pattern> results, int k) {
+    public static void printResults(List<FrequentItemset> results, int k) {
         // Check if any patterns were found
         if (results.isEmpty()) {
             System.out.println("╔═══════════════════════════════════════════════════════════╗");
@@ -59,7 +59,7 @@ public class Usage {
 
         // Print each pattern
         for (int i = 0; i < displayCount; i++) {
-            Pattern p = results.get(i);
+            FrequentItemset fi = results.get(i);
 
             /**
              * For each pattern, we display:
@@ -70,9 +70,9 @@ public class Usage {
              */
             System.out.printf("%-4d  %-40s  %8d  %12.4f%n",
                 i + 1,                              // Rank (1-based index)
-                p.itemset.toStringWithCodec(),      // Itemset as readable string
-                p.support,                          // Expected support
-                p.probability                       // Probability
+                fi.toStringWithCodec(),             // Itemset as readable string (inherited method)
+                fi.getSupport(),                    // Expected support
+                fi.getProbability()                 // Probability
             );
         }
 
@@ -90,9 +90,9 @@ public class Usage {
         System.out.println("  Patterns displayed     : " + displayCount);
 
         if (!results.isEmpty()) {
-            Pattern topPattern = results.get(0);
-            System.out.println("  Highest support        : " + topPattern.support);
-            System.out.println("  Top pattern            : " + topPattern.itemset.toStringWithCodec());
+            FrequentItemset topPattern = results.get(0);
+            System.out.println("  Highest support        : " + topPattern.getSupport());
+            System.out.println("  Top pattern            : " + topPattern.toStringWithCodec());
         }
 
         System.out.println();

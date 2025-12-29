@@ -10,8 +10,8 @@ import shared.Constants;
  *   - findProbabilisticSupport(): Binary search for maximum valid support
  *
  * Subclasses implement distribution computation:
- *   - GFSupportCalculator: Dynamic Programming O(n²)
- *   - FFTSupportCalculator: Fast Fourier Transform O(n log² n)
+ *   - DirectConvolutionSupportCalculator: Dynamic Programming O(n²)
+ *   - FFTConvolutionSupportCalculator: Fast Fourier Transform O(n log² n)
  *
  * Mathematical Foundation:
  *

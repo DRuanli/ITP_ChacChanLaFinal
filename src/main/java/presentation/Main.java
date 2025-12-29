@@ -2,7 +2,7 @@ package presentation;
 
 import domain.observer.PhaseTimingObserver;
 import infrastructure.factory.MinerFactory;
-import domain.model.Pattern;
+import domain.model.FrequentItemset;
 import infrastructure.persistence.UncertainDatabase;
 import presentation.Usage;
 import domain.mining.TUFCI;
@@ -59,7 +59,7 @@ public class Main {
         long startTime = System.nanoTime();
 
         // Execute the mining algorithm
-        List<Pattern> results = miner.mine();
+        List<FrequentItemset> results = miner.mine();
 
         long endTime = System.nanoTime();
         long executionTime = (endTime - startTime) / 1_000_000; // Convert to ms

@@ -20,6 +20,12 @@ import java.util.List;
  *          BitSet representation: 100101 (bits 0, 2, 5 are set)
  *
  * Immutability: Operations like union() return NEW Itemset, original unchanged.
+ * After construction phase (calling add()), itemsets should be treated as immutable.
+ *
+ * This is the BASE CLASS for the itemset hierarchy:
+ *   Itemset (just items)
+ *       └── FrequentItemset (+ support, probability)
+ *               └── CachedFrequentItemset (+ tidset)
  *
  * @author Dang Nguyen Le
  */
@@ -40,6 +46,7 @@ public class Itemset {
 
     /**
      * Public constructor - creates empty itemset.
+     * Items can be added via add() during construction phase.
      *
      * @param vocab vocabulary for item name lookup
      */
@@ -52,13 +59,13 @@ public class Itemset {
     }
 
     /**
-     * Private constructor - creates itemset from existing BitSet.
-     * Used internally by union() and other operations.
+     * Protected constructor - creates itemset from existing BitSet.
+     * Used internally by union() and other operations, and by subclasses.
      *
      * @param items BitSet to clone (defensive copy)
      * @param vocab vocabulary reference
      */
-    private Itemset(BitSet items, Vocabulary vocab) {
+    protected Itemset(BitSet items, Vocabulary vocab) {
         // Clone to ensure immutability - changes to original don't affect this
         this.items = (BitSet) items.clone();
 
@@ -66,7 +73,50 @@ public class Itemset {
     }
 
     /**
+     * Protected copy constructor - creates copy of another itemset.
+     * Useful for subclasses that need to copy base itemset data.
+     *
+     * @param other itemset to copy
+     */
+    protected Itemset(Itemset other) {
+        this.items = (BitSet) other.items.clone();
+        this.vocab = other.vocab;
+    }
+
+    /**
+     * Static factory method - creates singleton itemset with one item.
+     * Preferred over constructor + add() for single items.
+     *
+     * @param vocab vocabulary for item lookup
+     * @param item  item index to include
+     * @return new Itemset containing only the specified item
+     */
+    public static Itemset singleton(Vocabulary vocab, int item) {
+        Itemset itemset = new Itemset(vocab);
+        itemset.add(item);
+        return itemset;
+    }
+
+    /**
+     * Static factory method - creates itemset with multiple items.
+     * Preferred over constructor + multiple add() calls.
+     *
+     * @param vocab vocabulary for item lookup
+     * @param items item indices to include
+     * @return new Itemset containing all specified items
+     */
+    public static Itemset of(Vocabulary vocab, int... items) {
+        Itemset itemset = new Itemset(vocab);
+        for (int item : items) {
+            itemset.add(item);
+        }
+        return itemset;
+    }
+
+    /**
      * Add an item to this itemset.
+     * Should only be called during construction phase.
+     * After construction, treat itemsets as immutable.
      *
      * @param itemIndex index of item to add (from Vocabulary)
      * @throws IllegalArgumentException if index is negative
@@ -82,6 +132,16 @@ public class Itemset {
         // Set bit at position itemIndex to true (1)
         // If already set, no change occurs
         items.set(itemIndex);
+    }
+
+    /**
+     * Protected accessor for BitSet - allows subclasses to access underlying data.
+     * Returns reference (not clone) for efficiency - subclasses must not modify.
+     *
+     * @return the underlying BitSet
+     */
+    protected BitSet getItemsBitSet() {
+        return items;
     }
 
     /**
@@ -145,6 +205,30 @@ public class Itemset {
         // This efficiently skips over unset bits
         for (int i = items.nextSetBit(0); i >= 0; i = items.nextSetBit(i + 1)) {
             result.add(i);
+        }
+
+        return result;
+    }
+
+    /**
+     * Get items as primitive int array (zero-copy, no boxing).
+     *
+     * <p><b>Performance:</b> Preferred over getItems() for iteration-heavy operations
+     * as it avoids Integer boxing/unboxing overhead.</p>
+     *
+     * <p>Returns items in ascending order, same as getItems().</p>
+     *
+     * @return primitive array of item indices in ascending order
+     */
+    public int[] getItemsArray() {
+        // Pre-allocate array of exact size (avoid resizing)
+        int size = items.cardinality();
+        int[] result = new int[size];
+
+        int idx = 0;
+        // Same iteration pattern as getItems(), but stores in primitive array
+        for (int i = items.nextSetBit(0); i >= 0; i = items.nextSetBit(i + 1)) {
+            result[idx++] = i;
         }
 
         return result;
