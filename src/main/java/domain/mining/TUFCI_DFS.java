@@ -59,16 +59,6 @@ public class TUFCI_DFS extends AbstractFrequentItemsetMiner {
     // ==================== Instance Variables ====================
 
     /**
-     * Vocabulary containing all unique items in the database.
-     */
-    private final Vocabulary vocab;
-
-    /**
-     * Top-K heap that maintains the k best patterns found so far.
-     */
-    private TopKHeap topK;
-
-    /**
      * Stack for DFS traversal (LIFO - Last In, First Out).
      *
      * KEY DIFFERENCE FROM TUFCI:
@@ -79,31 +69,6 @@ public class TUFCI_DFS extends AbstractFrequentItemsetMiner {
      * exploring deeply into one branch before backtracking.
      */
     private Deque<FrequentItemset> stack;
-
-    /**
-     * Cache storing computed patterns to avoid redundant calculations.
-     */
-    private Map<Itemset, CachedFrequentItemset> cache;
-
-    /**
-     * Support calculator for computing expected support.
-     */
-    private SupportCalculator calculator;
-
-    /**
-     * Pre-computed singleton itemsets for all items.
-     */
-    private Itemset[] singletonCache;
-
-    /**
-     * Number of frequent single items.
-     */
-    private int frequentItemCount;
-
-    /**
-     * Array of frequent item IDs sorted by support descending.
-     */
-    private int[] frequentItems;
 
     // ==================== Statistics for Comparison ====================
 
@@ -127,10 +92,7 @@ public class TUFCI_DFS extends AbstractFrequentItemsetMiner {
      * @param k The number of top patterns to find
      */
     public TUFCI_DFS(UncertainDatabase database, double tau, int k) {
-        super(database, tau, k);
-        this.vocab = database.getVocabulary();
-        this.calculator = new DirectConvolutionSupportCalculator(tau);
-        this.cache = new HashMap<>();
+        super(database, tau, k, new DirectConvolutionSupportCalculator(tau));
     }
 
     /**
@@ -143,63 +105,12 @@ public class TUFCI_DFS extends AbstractFrequentItemsetMiner {
      */
     public TUFCI_DFS(UncertainDatabase database, double tau, int k,
                      SupportCalculator calculator) {
-        super(database, tau, k);
-        this.vocab = database.getVocabulary();
-        this.calculator = calculator;
-        this.cache = new HashMap<>();
+        super(database, tau, k, calculator);
     }
 
     // ==================== Phase 1: Compute Frequent 1-Itemsets ====================
-
-    /**
-     * Phase 1: Computes support and probability for all single-item patterns.
-     *
-     * This phase is IDENTICAL to TUFCI - no change needed for DFS.
-     * The difference in search strategy only affects Phase 3.
-     *
-     * @return List of all single-item patterns sorted by support (descending)
-     */
-    @Override
-    protected List<FrequentItemset> computeAllSingletonSupports() {
-        int vocabSize = vocab.size();
-
-        FrequentItemset[] resultArray = new FrequentItemset[vocabSize];
-        ConcurrentHashMap<Itemset, CachedFrequentItemset> concurrentCache = new ConcurrentHashMap<>(vocabSize);
-
-        // Pre-create all singleton itemsets
-        this.singletonCache = new Itemset[vocabSize];
-        for (int i = 0; i < vocabSize; i++) {
-            singletonCache[i] = createSingletonItemset(i);
-        }
-
-        // Process each item in parallel
-        java.util.stream.IntStream.range(0, vocabSize).parallel().forEach(item -> {
-            Itemset singleton = singletonCache[item];
-            Tidset tidset = database.getTidset(singleton);
-
-            if (tidset.isEmpty()) {
-                resultArray[item] = null;
-                return;
-            }
-
-            double[] supportResult = calculator.computeProbabilisticSupportFromTidset(tidset, database.size());
-            int support = (int) supportResult[0];
-            double probability = supportResult[1];
-
-            FrequentItemset fi = new FrequentItemset(singleton, support, probability);
-            resultArray[item] = fi;
-            concurrentCache.put(singleton, new CachedFrequentItemset(singleton, support, probability, tidset));
-        });
-
-        // Sort by support descending
-        List<FrequentItemset> result = Arrays.stream(resultArray)
-                .filter(Objects::nonNull)
-                .sorted(FrequentItemset::compareBySupport)
-                .collect(Collectors.toList());
-
-        this.cache = concurrentCache;
-        return result;
-    }
+    // Implemented in AbstractFrequentItemsetMiner - no override needed
+    // This phase is IDENTICAL across all search strategies
 
     // ==================== Phase 2: Initialize Data Structures ====================
 
@@ -216,7 +127,7 @@ public class TUFCI_DFS extends AbstractFrequentItemsetMiner {
     @Override
     protected void initializeTopKWithClosedSingletons(List<FrequentItemset> frequent1Itemsets) {
         // Initialize Top-K heap
-        this.topK = new TopKHeap(k);
+        this.topK = new TopKHeap(getK());
 
         /**
          * Initialize STACK for DFS traversal.
@@ -331,7 +242,7 @@ public class TUFCI_DFS extends AbstractFrequentItemsetMiner {
      * @param frequent1itemsets The list of 1-itemsets (not used directly)
      */
     @Override
-    protected void performBestFirstMining(List<FrequentItemset> frequent1itemsets) {
+    protected void executePhase3(List<FrequentItemset> frequent1itemsets) {
         // Reset statistics
         candidatesExplored = 0;
         candidatesPruned = 0;
@@ -445,205 +356,9 @@ public class TUFCI_DFS extends AbstractFrequentItemsetMiner {
         return candidatesPruned;
     }
 
-    // ==================== Utility Methods ====================
-
-    private Itemset createSingletonItemset(int item) {
-        Itemset itemset = new Itemset(vocab);
-        itemset.add(item);
-        return itemset;
-    }
-
-    private int getThreshold() {
-        return topK.getMinSupport();
-    }
-
-    private int getItemSupport(int item) {
-        if (item < 0 || item >= singletonCache.length) return 0;
-        Itemset singleton = singletonCache[item];
-        CachedFrequentItemset cached = cache.get(singleton);
-        return (cached != null) ? cached.getSupport() : 0;
-    }
-
-    private int getMaxItemIndex(Itemset itemset) {
-        int[] items = itemset.getItemsArray();
-        if (items.length == 0) return -1;
-        return items[items.length - 1];
-    }
-
-    // ==================== Closure Checking Methods ====================
-
-    /**
-     * Checks if a 1-itemset is closed.
-     * (Identical to TUFCI implementation)
-     */
-    private boolean checkClosure1Itemset(FrequentItemset oneItemFI, int supOneItem,
-                                         List<FrequentItemset> frequent1Itemset, int minsup) {
-        int itemA = oneItemFI.getItems().get(0);
-
-        for (FrequentItemset otherFI : frequent1Itemset) {
-            int itemB = otherFI.getItems().get(0);
-
-            if (itemA == itemB) continue;
-
-            if (otherFI.getSupport() < supOneItem) break;
-
-            Itemset unionItemset = oneItemFI.union(otherFI);
-
-            CachedFrequentItemset cached = cache.get(unionItemset);
-            int supAB;
-            double probAB;
-            Tidset tidsetAB;
-
-            if (cached != null) {
-                supAB = cached.getSupport();
-                probAB = cached.getProbability();
-                tidsetAB = cached.getTidset();
-            } else {
-                tidsetAB = cache.get(oneItemFI).getTidset().intersect(cache.get(otherFI).getTidset());
-
-                if (!tidsetAB.isEmpty()) {
-                    double[] result = calculator.computeProbabilisticSupportFromTidset(tidsetAB, database.size());
-                    supAB = (int) result[0];
-                    probAB = result[1];
-                } else {
-                    supAB = 0;
-                    probAB = 0.0;
-                }
-
-                if (otherFI.getSupport() >= minsup) {
-                    cache.put(unionItemset, new CachedFrequentItemset(unionItemset, supAB, probAB, tidsetAB));
-                }
-            }
-
-            if (supAB == supOneItem) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * Checks closure and generates extensions for a candidate pattern.
-     * (Identical to TUFCI implementation - pruning strategies still apply)
-     */
-    private ClosureCheckResult checkClosureAndGenerateExtensions(FrequentItemset candidate, int threshold) {
-        int supX = candidate.getSupport();
-        boolean isClosed = true;
-
-        List<FrequentItemset> extensions = new ArrayList<>();
-
-        int maxItemInX = getMaxItemIndex(candidate);
-        boolean closureCheckingDone = false;
-
-        for (int idx = 0; idx < frequentItemCount; idx++) {
-            int item = frequentItems[idx];
-
-            if (candidate.contains(item)) continue;
-
-            int itemSupport = getItemSupport(item);
-
-            // Pruning: Item support threshold
-            if (itemSupport < threshold) {
-                break;
-            }
-
-            if (!closureCheckingDone && itemSupport < supX) {
-                closureCheckingDone = true;
-            }
-
-            boolean needClosureCheck = !closureCheckingDone && isClosed;
-            boolean needExtension = (item > maxItemInX);
-
-            int upperBound = Math.min(supX, itemSupport);
-
-            // Pruning: Subset-based upper bound
-            if (topK.isFull() && needExtension) {
-                for (int existingItem : candidate.getItemsArray()) {
-                    Itemset twoItemset = Itemset.of(vocab,
-                        Math.min(existingItem, item),
-                        Math.max(existingItem, item));
-
-                    CachedFrequentItemset cachedSubset = cache.get(twoItemset);
-                    if (cachedSubset != null) {
-                        upperBound = Math.min(upperBound, cachedSubset.getSupport());
-                        if (upperBound < threshold) {
-                            break;
-                        }
-                    }
-                }
-            }
-
-            boolean canEnterTopK = (upperBound >= threshold);
-            boolean shouldGenerateExtension = needExtension && canEnterTopK;
-
-            if (!needClosureCheck && !shouldGenerateExtension) {
-                continue;
-            }
-
-            Itemset itemItemset = singletonCache[item];
-            Itemset Xe = candidate.union(itemItemset);
-            int supXe;
-            double probXe;
-            Tidset tidsetXe;
-
-            CachedFrequentItemset cached = cache.get(Xe);
-            if (cached != null) {
-                supXe = cached.getSupport();
-                probXe = cached.getProbability();
-                tidsetXe = cached.getTidset();
-            } else {
-                CachedFrequentItemset xInfo = cache.get(candidate);
-                CachedFrequentItemset itemInfo = cache.get(itemItemset);
-
-                if (xInfo == null || itemInfo == null) {
-                    Tidset tidsetX = database.getTidset(candidate);
-                    Tidset tidsetItem = database.getTidset(itemItemset);
-                    tidsetXe = tidsetX.intersect(tidsetItem);
-                } else {
-                    tidsetXe = xInfo.getTidset().intersect(itemInfo.getTidset());
-                }
-
-                int tidsetSize = tidsetXe.size();
-
-                // Pruning: Tidset size
-                if (tidsetSize < threshold && !needClosureCheck) {
-                    supXe = 0;
-                    probXe = 0.0;
-                    cache.put(Xe, new CachedFrequentItemset(Xe, 0, 0.0, tidsetXe));
-                    continue;
-                }
-
-                // Pruning: Tidset-based early closure
-                if (needClosureCheck && tidsetSize < supX) {
-                    if (!shouldGenerateExtension) {
-                        supXe = 0;
-                        probXe = 0.0;
-                        cache.put(Xe, new CachedFrequentItemset(Xe, 0, 0.0, tidsetXe));
-                        continue;
-                    }
-                    needClosureCheck = false;
-                }
-
-                double[] result = calculator.computeProbabilisticSupportFromTidset(
-                        tidsetXe, database.size());
-                supXe = (int) result[0];
-                probXe = result[1];
-
-                cache.put(Xe, new CachedFrequentItemset(Xe, supXe, probXe, tidsetXe));
-            }
-
-            // Closure check
-            if (needClosureCheck && supXe == supX) {
-                isClosed = false;
-            }
-
-            // Generate extension
-            if (shouldGenerateExtension) {
-                extensions.add(new FrequentItemset(Xe, supXe, probXe));
-            }
-        }
-
-        return new ClosureCheckResult(isClosed, extensions);
-    }
+    // ==================== Utility Methods & Closure Checking ====================
+    // All utility methods and closure checking methods are now implemented in
+    // AbstractFrequentItemsetMiner to eliminate code duplication.
+    // Available methods: createSingletonItemset, getThreshold, getItemSupport,
+    // getMaxItemIndex, checkClosure1Itemset, checkClosureAndGenerateExtensions
 }

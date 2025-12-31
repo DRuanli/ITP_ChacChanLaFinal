@@ -233,10 +233,10 @@ public class TUFCI_Pruning extends AbstractFrequentItemsetMiner {
 
         java.util.stream.IntStream.range(0, vocabSize).parallel().forEach(item -> {
             Itemset singleton = singletonCache[item];
-            Tidset tidset = database.getTidset(singleton);
+            Tidset tidset = getDatabase().getTidset(singleton);
             if (tidset.isEmpty()) { resultArray[item] = null; return; }
 
-            double[] supportResult = calculator.computeProbabilisticSupportFromTidset(tidset, database.size());
+            double[] supportResult = calculator.computeProbabilisticSupportFromTidset(tidset, getDatabase().size());
             int support = (int) supportResult[0];
             double probability = supportResult[1];
 
@@ -262,7 +262,7 @@ public class TUFCI_Pruning extends AbstractFrequentItemsetMiner {
     @Override
     protected void initializeTopKWithClosedSingletons(List<FrequentItemset> frequent1Itemsets) {
         long startTime = System.nanoTime();
-        this.topK = new TopKHeap(k);
+        this.topK = new TopKHeap(getK());
         this.pq = new PriorityQueue<>(FrequentItemset::compareBySupport);
 
         int minsup = 0;
@@ -322,7 +322,7 @@ public class TUFCI_Pruning extends AbstractFrequentItemsetMiner {
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Override
-    protected void performBestFirstMining(List<FrequentItemset> frequent1itemsets) {
+    protected void executePhase3(List<FrequentItemset> frequent1itemsets) {
         long startTime = System.nanoTime();
 
         while (!pq.isEmpty()) {
@@ -363,7 +363,7 @@ public class TUFCI_Pruning extends AbstractFrequentItemsetMiner {
     // CLOSURE AND EXTENSIONS - Contains P1b, P3, P4, P5, P6, P7
     // ═══════════════════════════════════════════════════════════════════════════
 
-    private boolean checkClosure1Itemset(FrequentItemset oneItemFI, int supOneItem,
+    protected boolean checkClosure1Itemset(FrequentItemset oneItemFI, int supOneItem,
                                          List<FrequentItemset> frequent1Itemset, int minsup) {
         int itemA = oneItemFI.getItems().get(0);
 
@@ -389,7 +389,7 @@ public class TUFCI_Pruning extends AbstractFrequentItemsetMiner {
                 metrics.tidsetIntersections++;
 
                 if (!tidsetAB.isEmpty()) {
-                    double[] result = calculator.computeProbabilisticSupportFromTidset(tidsetAB, database.size());
+                    double[] result = calculator.computeProbabilisticSupportFromTidset(tidsetAB, getDatabase().size());
                     supAB = (int) result[0];
                     probAB = result[1];
                     metrics.supportCalculations++;
@@ -404,7 +404,7 @@ public class TUFCI_Pruning extends AbstractFrequentItemsetMiner {
         return true;
     }
 
-    private ClosureCheckResult checkClosureAndGenerateExtensions(FrequentItemset candidate, int threshold) {
+    protected ClosureCheckResult checkClosureAndGenerateExtensions(FrequentItemset candidate, int threshold) {
         int supX = candidate.getSupport();
         boolean isClosed = true;
         List<FrequentItemset> extensions = new ArrayList<>();
@@ -469,7 +469,7 @@ public class TUFCI_Pruning extends AbstractFrequentItemsetMiner {
                 CachedFrequentItemset itemInfo = cache.get(itemItemset);
 
                 if (xInfo == null || itemInfo == null) {
-                    tidsetXe = database.getTidset(candidate).intersect(database.getTidset(itemItemset));
+                    tidsetXe = getDatabase().getTidset(candidate).intersect(getDatabase().getTidset(itemItemset));
                 } else {
                     tidsetXe = xInfo.getTidset().intersect(itemInfo.getTidset());
                 }
@@ -494,7 +494,7 @@ public class TUFCI_Pruning extends AbstractFrequentItemsetMiner {
                     metrics.prunedByP7++;
                 }
 
-                double[] result = calculator.computeProbabilisticSupportFromTidset(tidsetXe, database.size());
+                double[] result = calculator.computeProbabilisticSupportFromTidset(tidsetXe, getDatabase().size());
                 supXe = (int) result[0];
                 probXe = result[1];
                 metrics.supportCalculations++;
@@ -521,18 +521,18 @@ public class TUFCI_Pruning extends AbstractFrequentItemsetMiner {
         return results;
     }
 
-    private Itemset createSingletonItemset(int item) {
+    protected Itemset createSingletonItemset(int item) {
         Itemset itemset = new Itemset(vocab);
         itemset.add(item);
         return itemset;
     }
-    private int getThreshold() { return topK.getMinSupport(); }
-    private int getItemSupport(int item) {
+    protected int getThreshold() { return topK.getMinSupport(); }
+    protected int getItemSupport(int item) {
         if (item < 0 || item >= singletonCache.length) return 0;
         CachedFrequentItemset cached = cache.get(singletonCache[item]);
         return (cached != null) ? cached.getSupport() : 0;
     }
-    private int getMaxItemIndex(Itemset itemset) {
+    protected int getMaxItemIndex(Itemset itemset) {
         int[] items = itemset.getItemsArray();
         return items.length == 0 ? -1 : items[items.length - 1];
     }
