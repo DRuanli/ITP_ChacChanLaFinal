@@ -54,7 +54,7 @@ import java.util.stream.Collectors;
  * @version 1.0
  * @see TUFCI The Best-First Search version for comparison
  */
-public class TUFCI_DFS extends AbstractFrequentItemsetMiner {
+public class TUFCI_DFS extends AbstractMiner {
 
     // ==================== Instance Variables ====================
 

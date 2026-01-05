@@ -11,8 +11,6 @@ import java.util.BitSet;
  *       └── FrequentItemset (+ support, probability)  ← THIS CLASS
  *               └── CachedFrequentItemset (+ tidset)
  *
- * This class REPLACES the old Pattern class and CandidatePattern inner class.
- *
  * A FrequentItemset IS-A Itemset that has been mined and has:
  *   - support: probabilistic support value
  *   - probability: P(support >= computed_support)

@@ -40,7 +40,7 @@ import java.util.stream.Collectors;
  * @author Your Name
  * @version 1.0
  */
-public class TUFCI extends AbstractFrequentItemsetMiner {
+public class TUFCI extends AbstractMiner {
 
     // ==================== Instance Variables ====================
 

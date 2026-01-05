@@ -56,7 +56,7 @@ import java.util.stream.Collectors;
  * @author Dang Nguyen Le
  * @version 2.0
  */
-public class TUFCI_Pruning extends AbstractFrequentItemsetMiner {
+public class TUFCI_Pruning extends AbstractMiner {
 
     // ═══════════════════════════════════════════════════════════════════════════
     // PRUNING CONFIGURATION

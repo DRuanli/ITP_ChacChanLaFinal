@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
- * AbstractFrequentItemsetMiner - Template Method Pattern for mining algorithms.
+ * AbstractMiner - Template Method Pattern for mining algorithms.
  *
  * ═══════════════════════════════════════════════════════════════════════════════
  * TEMPLATE METHOD PATTERN
@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
  * letting subclasses override specific steps without changing structure.
  *
  * Structure:
- *   AbstractFrequentItemsetMiner (this class)
+ *   AbstractMiner (this class)
  *       │
  *       ├── mine()                    ← Template Method (final, defines skeleton)
  *       │     ├── computeAllSingletonSupports()    ← Abstract (subclass implements)
@@ -31,11 +31,6 @@ import java.util.stream.Collectors;
  *       │
  *       └── ClosureAwareTopKMiner (subclass)
  *             └── Implements all abstract methods
- *
- * Benefits:
- *   1. Code reuse: Common logic (timing, observers) in base class
- *   2. Inversion of control: Base class calls subclass methods
- *   3. Easy extension: Add new mining algorithms by subclassing
  *
  * ═══════════════════════════════════════════════════════════════════════════════
  * THREE-PHASE MINING ARCHITECTURE
@@ -61,13 +56,12 @@ import java.util.stream.Collectors;
  *
  * @author Dang Nguyen Le
  */
-public abstract class AbstractFrequentItemsetMiner {
+public abstract class AbstractMiner {
 
     // ════════════════════════════════════════════════════════════════════════════
-    // IMMUTABLE CONFIGURATION (private final - encapsulated)
+    // IMMUTABLE CONFIGURATION
     // These define the mining problem and should never change after construction
     // ════════════════════════════════════════════════════════════════════════════
-
     /**
      * The uncertain database to mine.
      * Contains transactions with probabilistic item occurrences.
@@ -159,8 +153,8 @@ public abstract class AbstractFrequentItemsetMiner {
      * @param calculator custom support calculation strategy
      * @throws IllegalArgumentException if parameters are invalid
      */
-    public AbstractFrequentItemsetMiner(UncertainDatabase database, double tau, int k,
-                                       SupportCalculator calculator) {
+    public AbstractMiner(UncertainDatabase database, double tau, int k,
+                         SupportCalculator calculator) {
         // Validate all parameters before storing
         validateParameters(database, tau, k);
 
@@ -185,7 +179,7 @@ public abstract class AbstractFrequentItemsetMiner {
      * @param k number of top patterns to find (≥ 1)
      * @throws IllegalArgumentException if parameters are invalid
      */
-    public AbstractFrequentItemsetMiner(UncertainDatabase database, double tau, int k) {
+    public AbstractMiner(UncertainDatabase database, double tau, int k) {
         // Validate all parameters before storing
         validateParameters(database, tau, k);
 

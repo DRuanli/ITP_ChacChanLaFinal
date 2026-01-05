@@ -11,8 +11,6 @@ import java.util.BitSet;
  *       └── FrequentItemset (+ support, probability)
  *               └── CachedFrequentItemset (+ tidset)  ← THIS CLASS
  *
- * This class REPLACES the old PatternInfo inner class.
- *
  * A CachedFrequentItemset IS-A FrequentItemset that also stores:
  *   - tidset: cached transaction IDs and probabilities
  *
