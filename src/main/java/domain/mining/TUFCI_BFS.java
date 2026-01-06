@@ -51,8 +51,7 @@ import java.util.stream.Collectors;
  *   <li>Threshold rises slowly (processes many low-support patterns first)</li>
  * </ul>
  *
- * @author Dang Nguyen Le
- * @version 1.0
+ * @author Dang Nguyen Le, Gia Huy Vo
  * @see TUFCI The Best-First Search version
  * @see TUFCI_DFS The Depth-First Search version
  */

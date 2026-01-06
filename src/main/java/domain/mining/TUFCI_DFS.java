@@ -50,8 +50,7 @@ import java.util.stream.Collectors;
  *   <li>DFS cannot use early termination as effectively as Best-First</li>
  * </ul>
  *
- * @author Dang Nguyen Le
- * @version 1.0
+ * @author Dang Nguyen Le, Gia Huy Vo
  * @see TUFCI The Best-First Search version for comparison
  */
 public class TUFCI_DFS extends AbstractMiner {

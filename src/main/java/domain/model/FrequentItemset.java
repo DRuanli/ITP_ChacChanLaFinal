@@ -21,7 +21,7 @@ import java.util.BitSet;
  *   - Priority queue entries
  *   - TopK heap entries
  *
- * @author Dang Nguyen Le
+ * @author Dang Nguyen Le, Gia Huy Vo
  */
 public class FrequentItemset extends Itemset {
 

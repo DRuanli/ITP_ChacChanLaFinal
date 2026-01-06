@@ -37,8 +37,7 @@ import java.util.stream.Collectors;
  * <p><b>Pruning Strategies:</b> The algorithm uses multiple pruning techniques to improve efficiency:
  * early termination, upper bound filtering, subset-based pruning, and tidset-based pruning.</p>
  *
- * @author Your Name
- * @version 1.0
+ * @author Dang Nguyen Le, Gia Huy Vo
  */
 public class TUFCI extends AbstractMiner {
 

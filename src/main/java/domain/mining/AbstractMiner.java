@@ -54,7 +54,7 @@ import java.util.stream.Collectors;
  *   - Generate candidates, check closure, update Top-K heap
  *   - Continue until early termination or exhaustion
  *
- * @author Dang Nguyen Le
+ * @author Dang Nguyen Le, Gia Huy Vo
  */
 public abstract class AbstractMiner {
 

@@ -16,7 +16,7 @@ import java.util.Collections;
  * During closure checking, we also generate valid extensions (supersets)
  * that should be explored next in the mining process.
  *
- * @author Dang Nguyen Le
+ * @author Dang Nguyen Le, Gia Huy Vo
  */
 public class ClosureCheckResult {
 

@@ -36,7 +36,7 @@ import java.util.*;
  *     1 Bread:0.9 Milk:0.7 Butter:0.5
  *     2 Bread:0.6 Cheese:0.8
  *
- * @author Dang Nguyen Le
+ * @author Dang Nguyen Le, Gia Huy Vo
  */
 public class UncertainDatabase {
 

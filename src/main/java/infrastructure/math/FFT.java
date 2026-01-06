@@ -54,7 +54,7 @@ package infrastructure.math;
  *
  * Time: T(n) = 2T(n/2) + O(n) → O(n log n)
  *
- * @author Dang Nguyen Le
+ * @author Dang Nguyen Le, Gia Huy Vo
  *
  */
 public class FFT {

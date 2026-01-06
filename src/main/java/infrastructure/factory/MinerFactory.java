@@ -16,7 +16,7 @@ import infrastructure.persistence.UncertainDatabase;
  * - Depth-First Search (TUFCI_DFS) - for comparison purposes
  * - Breadth-First Search (TUFCI_BFS) - for comparison purposes
  *
- * @author Dang Nguyen Le
+ * @author Dang Nguyen Le, Gia Huy Vo
  */
 public class MinerFactory {
 

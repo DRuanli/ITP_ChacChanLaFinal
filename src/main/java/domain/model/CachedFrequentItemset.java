@@ -20,7 +20,7 @@ import java.util.BitSet;
  *
  * Used internally during mining (not in final results).
  *
- * @author Dang Nguyen Le
+ * @author Dang Nguyen Le, Gia Huy Vo
  */
 public class CachedFrequentItemset extends FrequentItemset {
 

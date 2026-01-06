@@ -27,7 +27,7 @@ import java.util.List;
  *       └── FrequentItemset (+ support, probability)
  *               └── CachedFrequentItemset (+ tidset)
  *
- * @author Dang Nguyen Le
+ * @author Dang Nguyen Le, Gia Huy Vo
  */
 public class Itemset {
 

@@ -27,7 +27,7 @@ import java.util.List;
  * Key Operation: Intersection for computing itemset support
  *   tidset({A}) ∩ tidset({B}) = tidset({A,B})
  *
- * @author Dang Nguyen Le
+ * @author Dang Nguyen Le, Gia Huy Vo
  */
 public class Tidset {
 

@@ -18,7 +18,7 @@ import java.util.ArrayList;
  *   - Reverse mapping:  0 -> "Bread", 1 -> "Milk"  (ArrayList)
  *
  *
- * @author Dang Nguyen Le
+ * @author Dang Nguyen Le, Gia Huy Vo
  */
 public class Vocabulary {
     /**
@@ -32,11 +32,6 @@ public class Vocabulary {
      * Reverse mapping: index -> item name
      * Uses ArrayList for O(1) access by index.
      * Example: [0: "Bread", 1: "Milk", 2: "Butter"]
-     *
-     * Why ArrayList instead of Map<Integer, String>?
-     *   - Indices are consecutive integers starting from 0
-     *   - ArrayList provides direct O(1) access by position
-     *   - More memory efficient than HashMap
      */
     private final List<String> indexToItem;
 
