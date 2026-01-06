@@ -50,7 +50,7 @@ import shared.Constants;
  *   P(support = i-1 after t-1) × P(in t)
  *
  *
- * @author Dang Nguyen Le
+ * @author Dang Nguyen Le, Gia Huy Vo
  */
 public class DirectConvolutionSupportCalculator extends AbstractSupportCalculator {
 

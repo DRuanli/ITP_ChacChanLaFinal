@@ -43,7 +43,7 @@ import infrastructure.math.FFT;
  *
  *   Where O(n log n) is FFT multiplication of two degree-n polynomials.
  *
- * @author Dang Nguyen Le
+ * @author Dang Nguyen Le, Gia Huy Vo
  */
 public class FFTConvolutionSupportCalculator extends AbstractSupportCalculator {
 

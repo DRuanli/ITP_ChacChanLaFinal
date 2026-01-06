@@ -1,7 +1,7 @@
 package infrastructure.factory;
 
 import application.config.MiningConfiguration;
-import domain.mining.AbstractFrequentItemsetMiner;
+import domain.mining.AbstractMiner;
 import domain.mining.TUFCI;
 import domain.mining.TUFCI_DFS;
 import domain.mining.TUFCI_BFS;
@@ -12,11 +12,11 @@ import infrastructure.persistence.UncertainDatabase;
  * Factory for creating TUFCI Miner instances.
  *
  * Supports three search strategies:
- * - Best-First Search (TUFCI) - recommended for production
- * - Depth-First Search (TUFCI_DFS) - for comparison/educational purposes
- * - Breadth-First Search (TUFCI_BFS) - for comparison/educational purposes
+ * - Best-First Search (TUFCI) - main research method
+ * - Depth-First Search (TUFCI_DFS) - for comparison purposes
+ * - Breadth-First Search (TUFCI_BFS) - for comparison purposes
  *
- * @author Dang Nguyen Le
+ * @author Dang Nguyen Le, Gia Huy Vo
  */
 public class MinerFactory {
 
@@ -59,7 +59,7 @@ public class MinerFactory {
      * @param strategy search strategy (BEST_FIRST, DFS, or BFS)
      * @return configured miner instance
      */
-    public static AbstractFrequentItemsetMiner createMiner(
+    public static AbstractMiner createMiner(
         UncertainDatabase database,
         double tau,
         int k,
@@ -100,7 +100,7 @@ public class MinerFactory {
      * @param strategy search strategy (BEST_FIRST, DFS, or BFS)
      * @return configured miner instance
      */
-    public static AbstractFrequentItemsetMiner createMiner(
+    public static AbstractMiner createMiner(
         UncertainDatabase database,
         double tau,
         int k,

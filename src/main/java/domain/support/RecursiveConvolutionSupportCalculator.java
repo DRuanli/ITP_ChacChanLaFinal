@@ -31,7 +31,7 @@ import shared.Constants;
  *   ...
  *   Level log(n): n merges of size 1
  *
- * @author Dang Nguyen Le
+ * @author Dang Nguyen Le, Gia Huy Vo
  */
 public class RecursiveConvolutionSupportCalculator extends AbstractSupportCalculator {
 

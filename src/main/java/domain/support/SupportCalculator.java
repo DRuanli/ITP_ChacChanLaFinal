@@ -28,7 +28,7 @@ import domain.model.Tidset;
  *   <li>Aggarwal et al. - Frequent pattern mining with uncertain data</li>
  * </ul>
  *
- * @author Dang Nguyen Le
+ * @author Dang Nguyen Le, Gia Huy Vo
  */
 public interface SupportCalculator {
 

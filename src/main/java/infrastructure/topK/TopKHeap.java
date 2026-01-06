@@ -59,7 +59,7 @@ import java.util.*;
  *   - Return all patterns (for final results)
  *   - O(K)
  *
- * @author Dang Nguyen Le
+ * @author Dang Nguyen Le, Gia Huy Vo
  */
 public class TopKHeap {
 

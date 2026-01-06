@@ -29,7 +29,7 @@ import shared.Constants;
  *   Frequentness: [1.0, 0.9, 0.6, 0.2] (cumulative from right)
  *   If τ = 0.7, ProbSupport = 1 (largest s where freq[s] ≥ 0.7)
  *
- * @author Dang Nguyen Le
+ * @author Dang Nguyen Le, Gia Huy Vo
  */
 public abstract class AbstractSupportCalculator implements SupportCalculator {
 

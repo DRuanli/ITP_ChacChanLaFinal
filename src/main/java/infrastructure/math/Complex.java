@@ -17,7 +17,7 @@ package infrastructure.math;
  *   Original objects are never modified.
  *   This ensures thread safety and predictable behavior.
  *
- * @author Dang Nguyen Le
+ * @author Dang Nguyen Le, Gia Huy Vo
  */
 public class Complex {
 
